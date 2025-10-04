@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Streamer Dash — Final (Patched)</title>
+  <style>
+    /* ====== ORIGINAL STYLES - unchanged except small additions for overlays ====== */
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: 'Comic Sans MS', cursive, sans-serif;
+      color: #fff;
+      background: linear-gradient(45deg, #ff006e, #8338ec, #3a86ff, #06ffa5);
+      background-size: 400% 400%;
+      animation: gradientShift 6s ease infinite;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .card {
+      width: min(980px, 96vw);
+      background: rgba(0,0,0,.45);
+      backdrop-filter: blur(10px);
+      border: 3px solid #ff006e;
+      border-radius: 22px;
+      box-shadow: 0 0 30px rgba(255, 0, 110, .6);
+      padding: 18px 18px 22px;
+    }
+    h1 {
+      margin: 6px 0 12px;
+      font-size: clamp(28px, 4.2vw, 46px);
+      text-align: center;
+      text-shadow: 0 0 20px #ff006e, 0 0 30px #ff006e;
+    }
+    .row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .hidden { display: none !important; }
+    button {
+      padding: 12px 22px;
+      font-size: 16px;
+      font-weight: 800;
+      border: 0;
+      border-radius: 26px;
+      color: #fff;
+      background: linear-gradient(45deg, #ff006e, #8338ec);
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .2s ease;
+    }
+    button:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 0 18px rgba(255,0,110,.8); }
+    button:active { transform: translateY(1px) scale(.98); }
+
+    /* ====== SELECT SCREEN ====== */
+    .select-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 14px;
+      margin: 16px 0 8px;
+    }
+    .face-option {
+      position: relative;
+      border: 2px solid transparent;
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(0,0,0,.35);
+      cursor: pointer;
+      transition: transform .15s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+    .face-option img { width: 100%; height: 100%; display: block; aspect-ratio: 1/1; object-fit: cover; }
+    .face-option .label { position: absolute; inset: auto 8px 8px 8px; text-align: center; font-weight: 800; background: rgba(0,0,0,.5); border-radius: 10px; padding: 4px 8px; }
+    .face-option:hover { transform: translateY(-3px); }
+    .selected-hero { border-color: #00ff99; box-shadow: 0 0 18px rgba(0,255,153,.6); }
+    .selected-villain { border-color: #ff3b30; box-shadow: 0 0 18px rgba(255,59,48,.6); }
+    .selected-ghost { border-color: #7f5cff; box-shadow: 0 0 18px rgba(127,92,255,.6); }
+
+    .select-legend { text-align: center; margin-top: 8px; opacity: .9; font-weight: 700; }
+    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-weight: 800; }
+    .pill.hero { background: rgba(0,255,153,.2); border: 2px solid #00ff99; }
+    .pill.villain { background: rgba(255,59,48,.2); border: 2px solid #ff3b30; }
+    .pill.ghost { background: rgba(127,92,255,.12); border: 2px solid #7f5cff; }
+
+    /* ====== GAME HUD ====== */
+    .hud { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 8px 0 12px; font-weight: 800; }
+    .meter { display: flex; gap: 14px; align-items: center; }
+    .hud .stat { background: rgba(0,0,0,.35); padding: 8px 12px; border-radius: 12px; border: 2px solid rgba(255,255,255,.2); }
+    #gameCanvas { width: 100%; height: 520px; border: 3px solid #ff006e; border-radius: 16px; background: rgba(0,0,0,.25); display: block; }
+
+    /* floating feedback */
+    .float { position: absolute; pointer-events: none; font-weight: 900; text-shadow: 0 2px 6px rgba(0,0,0,.6); animation: floatUp .9s ease forwards; }
+    @keyframes floatUp { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-40px) scale(1.1); } }
+
+    /* screen flash for bad clicks */
+    .flash { animation: flash .18s ease; }
+    @keyframes flash { from { box-shadow: inset 0 0 0 9999px rgba(255,59,48,.4); } to { box-shadow: inset 0 0 0 0 rgba(255,59,48,0); } }
+
+    /* overlay elements (small additions) */
+    #effectOverlay {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      transition: opacity .2s ease, transform .2s ease, filter .2s ease;
+    }
+    #invertLayer {
+      position: absolute; inset: 0; pointer-events: none; mix-blend-mode: normal;
+      transition: filter .2s ease, opacity .2s ease;
+    }
+    #blackout {
+      position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none;
+      transition: opacity .12s ease;
+    }
+
+    /* GAME OVER */
+    .center { text-align: center; }
+
+    /* keep canvas crisp on high-DPI */
+    canvas { image-rendering: optimizeQuality; }
+  </style>
+</head>
+<body>
+  <!-- ====== SELECT / MENU ====== -->
+  <section id="selectCard" class="card">
+    <h1>Streamer Dash</h1>
+    <p class="center">Pick your <span class="pill hero">HERO</span>, your <span class="pill villain">VILLAIN</span>, and optionally pick a <span class="pill ghost">GHOST</span>. Click hero faces for points, avoid villains—ghosts surprise you!</p>
+
+    <div id="facesGrid" class="select-grid"></div>
+
+    <div class="row" style="margin-top:10px;">
+      <div id="chosenHero" class="pill hero">Hero: —</div>
+      <div id="chosenVillain" class="pill villain">Villain: —</div>
+      <div id="chosenGhost" class="pill ghost">Ghost: —</div>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <button id="startBtn" disabled>Start Game</button>
+    </div>
+    <p class="select-legend">Tap faces: 1st tap sets <span class="pill hero">Hero</span>, 2nd tap sets <span class="pill villain">Villain</span>, 3rd tap sets <span class="pill ghost">Ghost</span>. Tap selected to clear role.</p>
+  </section>
+
+  <!-- ====== GAME ====== -->
+  <section id="gameCard" class="card hidden" style="position:relative;">
+    <div class="hud">
+      <div class="meter">
+        <div class="stat">Score: <span id="score">0</span></div>
+        <div class="stat">Time: <span id="timer">30</span>s</div>
+        <div class="stat">Level: <span id="level">1</span></div>
+        <div class="stat">High: <span id="highScore">0</span></div>
+      </div>
+      <div class="row">
+        <button id="pauseBtn">Pause</button>
+        <button id="restartBtn">Restart</button>
+      </div>
+    </div>
+    <canvas id="gameCanvas" width="960" height="520"></canvas>
+  </section>
+
+  <!-- ====== GAME OVER ====== -->
+  <section id="overCard" class="card hidden center">
+    <h1>Game Over!</h1>
+    <p style="font-size:20px; margin: 4px 0 10px;">Your Score: <b id="finalScore">0</b></p>
+    <p style="opacity:.85;">High Score: <b id="finalHigh">0</b></p>
+    <div class="row" style="margin-top:10px;">
+      <button id="againBtn">Play Again</button>
+    </div>
+  </section>
+
+  <!-- overlays used by JS for visual punishment effects -->
+  <div id="effectOverlay">
+    <div id="invertLayer"></div>
+    <div id="blackout"></div>
+  </div>
+
+  <script>
+    /***** ASSETS CONFIG (use exact filenames in your folder) *****/
+    const FACES = [
+      { name: 'Dr Disrespect', img: 'dr disrespect.jpeg', sfx: null },
+      { name: 'Ducky Bhai', img: 'ducky bhai.jpeg', sfx: null },
+      { name: 'Hakla', img: 'hakla.jpeg', sfx: 'hakla.m4a' },
+      { name: 'IShowSpeed', img: 'ishowspeed.jpeg', sfx: 'ishowspeed bark main sound for iss.m4a' },
+      { name: 'Shkafity Gaming', img: 'shkafity gaming.jpg', sfx: null },
+      { name: 'Mr Jay Plays', img: 'mr jay plays.gif', sfx: null }
+    ];
+
+    // background music files in your folder
+    const BG_MUSIC_FILE = 'bg_music_1.mp3';
+
+    // fallback / generic sound placeholders (you can replace them with your own)
+    const SFX_DING = 'ding.wav';   // positive (add your file if needed)
+    const SFX_BUZZ = 'buzz.wav';   // negative (add your file if needed)
+    const SFX_GHOST = 'ghost.wav'; // ghost (add your file if needed)
+
+    /***** DOM elements *****/
+    const selectCard = document.getElementById('selectCard');
+    const facesGrid = document.getElementById('facesGrid');
+    const chosenHeroEl = document.getElementById('chosenHero');
+    const chosenVillainEl = document.getElementById('chosenVillain');
+    const chosenGhostEl = document.getElementById('chosenGhost');
+    const startBtn = document.getElementById('startBtn');
+
+    const gameCard = document.getElementById('gameCard');
+    const overCard = document.getElementById('overCard');
+
+    const scoreEl = document.getElementById('score');
+    const timerEl = document.getElementById('timer');
+    const highEl = document.getElementById('highScore');
+    const levelEl = document.getElementById('level');
+    const finalScoreEl = document.getElementById('finalScore');
+    const finalHighEl = document.getElementById('finalHigh');
+
+    const pauseBtn = document.getElementById('pauseBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const againBtn = document.getElementById('againBtn');
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const invertLayer = document.getElementById('invertLayer');
+    const blackout = document.getElementById('blackout');
+
+    /***** SELECTION STATE (hero, villain, ghost) *****/
+    let hero = null;    // string image filename
+    let villain = null; // string image filename
+    let ghost = null;   // string image filename (optional)
+
+    // Build selection grid (keeps original style)
+    FACES.forEach(face => {
+      const card = document.createElement('div');
+      card.className = 'face-option';
+      card.dataset.img = face.img;
+      card.dataset.name = face.name;
+      card.innerHTML = `
+        <img src="${face.img}" alt="${face.name}" />
+        <div class="label">${face.name}</div>
+      `;
+      card.addEventListener('click', () => {
+        // Tapping behavior:
+        // - If none selected: set hero
+        // - If hero set and different: set villain
+        // - If hero & villain set and different: set ghost
+        // - Tapping an already-selected role clears that role
+        const img = card.dataset.img;
+        if (hero === img) { hero = null; } // clear hero
+        else if (!hero) { hero = img; }
+        else if (villain === img) { villain = null; }
+        else if (!villain && img !== hero) { villain = img; }
+        else if (ghost === img) { ghost = null; }
+        else if (!ghost && img !== hero && img !== villain) { ghost = img; }
+
+        updateSelectionUI();
+      });
+      facesGrid.appendChild(card);
+    });
+
+    function updateSelectionUI() {
+      chosenHeroEl.textContent = 'Hero: ' + (hero ? displayName(hero) : '—');
+      chosenVillainEl.textContent = 'Villain: ' + (villain ? displayName(villain) : '—');
+      chosenGhostEl.textContent = 'Ghost: ' + (ghost ? displayName(ghost) : '—');
+      startBtn.disabled = !(hero && villain); // ghost optional
+      document.querySelectorAll('.face-option').forEach(el => {
+        el.classList.remove('selected-hero','selected-villain','selected-ghost');
+        const img = el.dataset.img;
+        if (img === hero) el.classList.add('selected-hero');
+        if (img === villain) el.classList.add('selected-villain');
+        if (img === ghost) el.classList.add('selected-ghost');
+      });
+    }
+    function displayName(img) { return FACES.find(f => f.img === img)?.name || img; }
+
+    /***** GAME STATE *****/
+    let faces = [];      // array of Face objects in play
+    let score = 0;
+    let timeLeft = 30;
+    let running = false;
+    let paused = false;
+    let timerRef = null;
+    let spawnRef = null;
+    let highScore = Number(localStorage.getItem('sd_high') || 0);
+    highEl.textContent = highScore;
+    let level = 1; // 1,2,3
+
+    // background music
+    const bgMusic = new Audio(BG_MUSIC_FILE);
+    bgMusic.loop = true;
+    bgMusic.volume = 0.35;
+
+    /***** FACE CLASS (canvas object) *****/
+    class Face {
+      constructor(imgSrc, x, y, speedFactor=1, maybeGhost=false){
+        this.img = new Image();
+        this.img.src = imgSrc;
+        this.src = imgSrc;
+        this.x = x; this.y = y;
+        // velocity scaled by level speed
+        const base = 1.2 * speedFactor;
+        this.dx = (Math.random() - 0.5) * base * 4;
+        this.dy = (Math.random() - 0.5) * base * 4;
+        this.w = 120; this.h = 120;
+        this.isVillain = (imgSrc === villain);
+        this.isHero = (imgSrc === hero);
+        this.isGhostRole = (imgSrc === ghost);
+        // some ghosts spawn invisible: for ghost-role faces we set hidden sometimes
+        this.hidden = maybeGhost && Math.random() < 0.45; // 45% spawn hidden (semi-transparent)
+        this.spawnTime = Date.now();
+      }
+      draw(){
+        // opacity for hidden ghosts
+        ctx.globalAlpha = this.hidden ? 0.18 : 1;
+        // glow outline depending on role (keeps original look)
+        if (this.isVillain) { ctx.shadowColor = '#ff3b30'; ctx.shadowBlur = 18; }
+        else if (this.isHero) { ctx.shadowColor = '#00ff99'; ctx.shadowBlur = 16; }
+        else { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 8; }
+        ctx.drawImage(this.img, this.x, this.y, this.w, this.h);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+      update(){
+        if (!paused){
+          // movement reflection
+          if (this.x + this.w > canvas.width || this.x < 0) this.dx *= -1;
+          if (this.y + this.h > canvas.height || this.y < 0) this.dy *= -1;
+          // speed adjustments per level handled by dx/dy magnitude on creation; small random jitter
+          this.x += this.dx + (Math.random()-0.5) * 0.6;
+          this.y += this.dy + (Math.random()-0.5) * 0.6;
+        }
+        this.draw();
+      }
+      contains(mx,my){ return mx >= this.x && mx <= this.x + this.w && my >= this.y && my <= this.y + this.h; }
+    }
+
+    /***** DRAW BACKGROUND & LOOP *****/
+    function drawBG(){
+      const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+      g.addColorStop(0,'#ff006e'); g.addColorStop(.5,'#8338ec'); g.addColorStop(1,'#3a86ff');
+      ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+
+    function loop(){
+      if (!running) return;
+      // clear
+      drawBG();
+      // update each face
+      for (let f of faces) f.update();
+      requestAnimationFrame(loop);
+    }
+
+    /***** SPAWNING LOGIC (adjusts with level) *****/
+    function spawnFacesForLevel(){
+      faces = [];
+      // spawnCount & speedFactor change with level
+      let spawnCount = 7;
+      let speedFactor = 1;
+      if (level === 2) { spawnCount = 9; speedFactor = 1.25; }
+      if (level === 3) { spawnCount = 12; speedFactor = 1.6; }
+
+      for (let i = 0; i < spawnCount; i++){
+        const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
+        const x = Math.random() * (canvas.width - 120);
+        const y = Math.random() * (canvas.height - 120);
+        const maybeGhost = (pick === ghost);
+        faces.push(new Face(pick, x, y, speedFactor, maybeGhost));
+      }
+    }
+
+    function resetLevelBasedOnScore(){
+      if (score >= 80 && level < 3) { level = 3; levelEl.textContent = level; spawnFacesForLevel(); }
+      else if (score >= 30 && level < 2) { level = 2; levelEl.textContent = level; spawnFacesForLevel(); }
+    }
+
+    /***** TIMER & GAME LIFECYCLE *****/
+    function startTimer(){
+      clearInterval(timerRef);
+      timerRef = setInterval(()=> {
+        if (!paused){
+          timeLeft--;
+          timerEl.textContent = timeLeft;
+          if (timeLeft <= 0) endGame();
+        }
+      }, 1000);
+    }
+
+    function startGame(){
+      score = 0; scoreEl.textContent = 0;
+      timeLeft = 30; timerEl.textContent = 30;
+      level = 1; levelEl.textContent = 1;
+      running = true; paused = false;
+      spawnFacesForLevel();
+      // play bg music (catch to avoid autoplay block errors)
+      bgMusic.currentTime = 0; bgMusic.play().catch(()=>{});
+      startTimer();
+      loop();
+      // periodically respawn a few faces to keep variety
+      clearInterval(spawnRef);
+      spawnRef = setInterval(()=>{
+        // occasionally add a new face rather than full respawn
+        const addCount = Math.max(1, Math.floor(level)); // add 1-3 depending on level
+        for (let i=0;i<addCount;i++){
+          const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
+          const x = Math.random() * (canvas.width - 120);
+          const y = Math.random() * (canvas.height - 120);
+          faces.push(new Face(pick, x, y, (level===1?1:level===2?1.25:1.6), pick===ghost));
+        }
+      }, 2000 - level * 400); // faster additions in higher levels
+    }
+
+    function endGame(){
+      running = false;
+      clearInterval(timerRef); clearInterval(spawnRef);
+      bgMusic.pause();
+      finalScoreEl.textContent = score;
+      if (score > highScore) { highScore = score; localStorage.setItem('sd_high', String(highScore)); }
+      highEl.textContent = highScore; finalHighEl.textContent = highScore;
+      gameCard.classList.add('hidden'); overCard.classList.remove('hidden');
+    }
+
+    /***** INPUT HANDLING & SCORING (punishments + ghost) *****/
+    function handleHit(mx,my){
+      if (!running || paused) return;
+      // check topmost by iterating reverse
+      for (let i = faces.length - 1; i >= 0; i--){
+        const f = faces[i];
+        if (f.contains(mx,my)){
+          // if it's ghost-role (even if hidden): clicking it triggers ghost effect
+          if (f.isGhostRole){
+            // ghost clicked: spooky effect + penalty
+            doGhostEffect(mx,my, f);
+            faces.splice(i,1);
+            break;
+          }
+          // villain clicked = bad
+          if (f.isVillain){
+            doBadClick(mx,my, f);
+            faces.splice(i,1);
+            break;
+          }
+          // hero clicked = good
+          if (f.isHero){
+            doGoodClick(mx,my,f);
+            faces.splice(i,1);
+            break;
+          }
+          // neutral clicked
+          doNeutral(mx,my,f);
+          faces.splice(i,1);
+          break;
+        }
+      }
+    }
+
+    function doGoodClick(mx,my,f){
+      score += 10;
+      showFloat('+10', mx, my, '#00ff99');
+      playSFXForFace(f, SFX_DING);
+      updateScoreAndLevel();
+    }
+
+    function doBadClick(mx,my,f){
+      score -= 6;
+      showFloat('-6', mx, my, '#ff3b30');
+      // visual punishments: invert, blackout flash, maybe freeze
+      triggerInvert(900);
+      triggerBlackoutFlash(260);
+      // small chance to freeze
+      if (Math.random() < 0.22) triggerFreeze(2600);
+      playSFXGeneric(SFX_BUZZ);
+      updateScoreAndLevel();
+    }
+
+    function doGhostEffect(mx,my,f){
+      score -= 8;
+      showFloat('-8', mx, my, '#b893ff');
+      // dramatic spooky: ghost sound + long invert + small shake (we'll use invert + blackout)
+      triggerBlackoutFlash(800);
+      triggerInvert(1300);
+      playSFXGeneric(SFX_GHOST);
+      // optionally play specific face sfx if provided
+      const faceCfg = FACES.find(x => x.img === f.src);
+      if (faceCfg?.sfx) playSFX(faceCfg.sfx);
+      updateScoreAndLevel();
+    }
+
+    function doNeutral(mx,my,f){
+      showFloat('meh', mx, my, '#ffffff');
+      // small neutral sound if set
+      const faceCfg = FACES.find(x => x.img === f.src);
+      if (faceCfg?.sfx) playSFX(faceCfg.sfx);
+      updateScoreAndLevel();
+    }
+
+    function updateScoreAndLevel(){
+      scoreEl.textContent = score;
+      // clamp negative scores to avoid runaway negativity display if you want:
+      // score = Math.max(score, -9999);
+      // check level thresholds
+      const prevLevel = level;
+      if (score >= 80) level = 3;
+      else if (score >= 30) level = 2;
+      else level = 1;
+      if (level !== prevLevel){
+        levelEl.textContent = level;
+        // respawn faces adjusted to new level
+        spawnFacesForLevel();
+      } else {
+        // keep going; occasionally respawn topups to keep variety
+        if (faces.length < (level === 1 ? 7 : level === 2 ? 9 : 12)) {
+          // add a face to maintain density
+          const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
+          const x = Math.random() * (canvas.width - 120);
+          const y = Math.random() * (canvas.height - 120);
+          faces.push(new Face(pick, x, y, (level===1?1:level===2?1.25:1.6), pick===ghost));
+        }
+      }
+    }
+
+    /***** Punishment helpers (invert, blackout, freeze) *****/
+    function triggerInvert(duration = 900){
+      // apply invert + rotate to body via invertLayer
+      invertLayer.style.filter = 'invert(1) hue-rotate(180deg) saturate(1.2)';
+      invertLayer.style.opacity = '1';
+      // applying transform rotate to body via documentElement
+      document.documentElement.style.transition = 'transform .18s ease';
+      document.documentElement.style.transform = 'rotate(180deg)';
+      setTimeout(()=> {
+        invertLayer.style.filter = '';
+        invertLayer.style.opacity = '0';
+        document.documentElement.style.transform = '';
+      }, duration);
+    }
+
+    function triggerBlackoutFlash(duration = 220){
+      blackout.style.opacity = '0.95';
+      setTimeout(()=> blackout.style.opacity = '0', duration);
+    }
+
+    let freezeTimeout = null;
+    function triggerFreeze(duration = 2000){
+      paused = true;
+      pauseBtn.textContent = 'Resume';
+      // overlay to show frozen effect (we use blackout semi)
+      blackout.style.opacity = '0.45';
+      clearTimeout(freezeTimeout);
+      freezeTimeout = setTimeout(()=> {
+        paused = false;
+        blackout.style.opacity = '0';
+        pauseBtn.textContent = 'Pause';
+      }, duration);
+    }
+
+    /***** Floating text feedback *****/
+    function showFloat(text,x,y,color){
+      const el = document.createElement('div');
+      el.className = 'float';
+      el.textContent = text;
+      el.style.left = (canvas.offsetLeft + x - 6) + 'px';
+      el.style.top  = (canvas.offsetTop + y - 6) + 'px';
+      el.style.color = color;
+      document.body.appendChild(el);
+      setTimeout(()=> el.remove(), 1000);
+    }
+
+    /***** Audio helpers *****/
+    function playSFX(file){
+      if (!file) return;
+      const a = new Audio(file);
+      a.volume = 0.9;
+      a.play().catch(()=>{});
+    }
+    function playSFXGeneric(file){
+      if (!file) return;
+      const a = new Audio(file);
+      a.volume = 0.9;
+      a.play().catch(()=>{});
+    }
+    function playSFXForFace(faceObj, fallback){
+      const faceCfg = FACES.find(x => x.img === faceObj.src);
+      if (faceCfg?.sfx) playSFX(faceCfg.sfx);
+      else if (fallback) playSFXGeneric(fallback);
+    }
+
+    /***** Input events (mouse & touch) *****/
+    function getPointerPos(e){
+      const r = canvas.getBoundingClientRect();
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches ? e.touches[0].clientX : 0);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches ? e.touches[0].clientY : 0);
+      return { x: clientX - r.left, y: clientY - r.top };
+    }
+
+    canvas.addEventListener('click', (e)=> {
+      const p = getPointerPos(e);
+      handleHit(p.x, p.y);
+    });
+    canvas.addEventListener('touchstart', (e)=> {
+      const p = getPointerPos(e);
+      handleHit(p.x, p.y);
+      e.preventDefault();
+    }, { passive: false });
+
+    /***** Controls: pause, restart, again *****/
+    pauseBtn.addEventListener('click', ()=> {
+      if (!running) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+      if (!paused) loop();
+    });
+
+    restartBtn.addEventListener('click', ()=> {
+      if (!running) return;
+      // quick restart while in-game
+      startGame();
+    });
+
+    againBtn.addEventListener('click', ()=> {
+      overCard.classList.add('hidden');
+      selectCard.classList.remove('hidden');
+      // reset selection UI (keep current selections so user can reuse)
+    });
+
+    /***** Start after selection *****/
+    startBtn.addEventListener('click', ()=> {
+      // ensure hero/villain set
+      if (!hero || !villain) return;
+      selectCard.classList.add('hidden');
+      overCard.classList.add('hidden');
+      gameCard.classList.remove('hidden');
+      // set canvas resolution to CSS size for crispness
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      startGame();
+    });
+
+    /***** Initial UI update and helper for selection mapping *****/
+    function updateSelectionUI(){
+      chosenHeroEl.textContent = 'Hero: ' + (hero ? displayName(hero) : '—');
+      chosenVillainEl.textContent = 'Villain: ' + (villain ? displayName(villain) : '—');
+      chosenGhostEl.textContent = 'Ghost: ' + (ghost ? displayName(ghost) : '—');
+      startBtn.disabled = !(hero && villain);
+      document.querySelectorAll('.face-option').forEach(el => {
+        el.classList.remove('selected-hero','selected-villain','selected-ghost');
+        const img = el.dataset.img;
+        if (img === hero) el.classList.add('selected-hero');
+        if (img === villain) el.classList.add('selected-villain');
+        if (img === ghost) el.classList.add('selected-ghost');
+      });
+    }
+    // we need an earlier updateSelectionUI for the grid builder - re-declare to keep consistent
+    updateSelectionUI = updateSelectionUI.bind(window);
+
+    // (re)build faces grid (this also defines per-card click behavior above—so re-run)
+    (function initGrid(){
+      // ensure grid is empty then repopulate (we already added earlier, but safe)
+      facesGrid.innerHTML = '';
+      FACES.forEach(face => {
+        const card = document.createElement('div');
+        card.className = 'face-option';
+        card.dataset.img = face.img;
+        card.dataset.name = face.name;
+        card.innerHTML = `
+          <img src="${face.img}" alt="${face.name}" />
+          <div class="label">${face.name}</div>
+        `;
+        card.addEventListener('click', () => {
+          const img = card.dataset.img;
+          // role-set logic: if not hero => set hero; else if hero set and not villain => set villain; else if both set and not ghost => set ghost
+          if (!hero) { hero = img; }
+          else if (hero === img) { hero = null; }
+          else if (!villain && img !== hero) { villain = img; }
+          else if (villain === img) { villain = null; }
+          else if (!ghost && img !== hero && img !== villain) { ghost = img; }
+          else if (ghost === img) { ghost = null; }
+          updateSelectionUI();
+        });
+        facesGrid.appendChild(card);
+      });
+      updateSelectionUI();
+    })();
+
+    // Utility: show initial local high score
+    highEl.textContent = highScore;
+
+    // Prevent accidental text selection on double-tap
+    document.addEventListener('touchmove', (e)=> { if (paused) e.preventDefault(); }, { passive:false });
+
+    // Resize handler: keep canvas sized
+    window.addEventListener('resize', ()=>{
+      if (gameCard.classList.contains('hidden')) return;
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    });
+
+    // Ensure selection UI initially set (in case variables prepopulated)
+    updateSelectionUI();
+
+    /***** End of script *****/
+  </script>
+</body>
+</html>
