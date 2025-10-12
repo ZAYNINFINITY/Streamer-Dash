@@ -48,35 +48,31 @@
 ## 📥 INSTALLATION
 
 **Clone the repository:**
-```bashgit clone
-https://github.com/ZAYNINFINITY/Streamer-Dash.git
+```bash
+git clone https://github.com/ZAYNINFINITY/Streamer-Dash.git
 cd Streamer-Dash
-Open the game in your browser:
-bash# Simply open the index.html file in your preferred browser
+```
+
+**Open the game in your browser:**
+```bash
+# Simply open the index.html file in your preferred browser
 # Or use a local server:
 python -m http.server 8000
 # Then visit: http://localhost:8000
-Or play online 👉 Live Demo
-
-🎮 HOW TO PLAY
-Choose your Hero, Villain, and optionally a Ghost
-
-Hit Start Game to begin your run
-Tap Heroes 🟢 to score points
-Avoid Villains 🔴 or lose score
-Ghosts 👻 bring unpredictable effects
-Watch your score, time, and level in the HUD
-Use Pause or Restart when needed
-Compete for the highest score! 🏆--->
-
 ```
+
+## 🎮 HOW TO PLAY
+- Choose your Hero, Villain, and optionally a Ghost
+- Hit Start Game to begin your run
+- Tap Heroes to score points; avoid Villains to prevent losing points
+- Ghosts trigger unpredictable effects
+- Watch your score, time, and level in the HUD
+- Use Pause or Restart when needed
+- Compete for the highest score!
 
 <p align="center">
   <img src="https://github.com/ZAYNINFINITY/Streamer-Dash/raw/main/assets/neon-divider.gif" width="80%" alt="Neon Pixel Divider" />
 </p>
-
-```
-
 
 🤝 CONTRIBUTING
 Got ideas? Power-ups? New characters?
@@ -91,9 +87,6 @@ Submit a Pull Request
 📜 LICENSE
 This project is licensed under the MIT License.
 
-💾 SAVE & EXIT
-```
-
 <p align="center">
   <img src="https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif" width="100%" />
 </p>
@@ -104,5 +97,4 @@ This project is licensed under the MIT License.
   Built with ❤️, ☕, and 💻 by <a href="https://github.com/ZAYNINFINITY">ZAYNINFINITY</a><br>
   🧠 Customize it. Stream it. Own it.
 </p>
-```
 

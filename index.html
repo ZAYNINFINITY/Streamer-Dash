@@ -117,6 +117,10 @@
 
     /* keep canvas crisp on high-DPI */
     canvas { image-rendering: optimizeQuality; }
+    /* accessibility: respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -151,6 +155,7 @@
       <div class="row">
         <button id="pauseBtn">Pause</button>
         <button id="restartBtn">Restart</button>
+        <button id="soundBtn" aria-pressed="false">Mute</button>
       </div>
     </div>
     <canvas id="gameCanvas" width="960" height="520"></canvas>
@@ -211,6 +216,7 @@
 
     const pauseBtn = document.getElementById('pauseBtn');
     const restartBtn = document.getElementById('restartBtn');
+    const soundBtn = document.getElementById('soundBtn');
     const againBtn = document.getElementById('againBtn');
 
     const canvas = document.getElementById('gameCanvas');
@@ -224,34 +230,32 @@
     let villain = null; // string image filename
     let ghost = null;   // string image filename (optional)
 
-    // Build selection grid (keeps original style)
-    FACES.forEach(face => {
-      const card = document.createElement('div');
-      card.className = 'face-option';
-      card.dataset.img = face.img;
-      card.dataset.name = face.name;
-      card.innerHTML = `
-        <img src="${face.img}" alt="${face.name}" />
-        <div class="label">${face.name}</div>
-      `;
-      card.addEventListener('click', () => {
-        // Tapping behavior:
-        // - If none selected: set hero
-        // - If hero set and different: set villain
-        // - If hero & villain set and different: set ghost
-        // - Tapping an already-selected role clears that role
-        const img = card.dataset.img;
-        if (hero === img) { hero = null; } // clear hero
-        else if (!hero) { hero = img; }
-        else if (villain === img) { villain = null; }
-        else if (!villain && img !== hero) { villain = img; }
-        else if (ghost === img) { ghost = null; }
-        else if (!ghost && img !== hero && img !== villain) { ghost = img; }
-
-        updateSelectionUI();
+    // Build selection grid once using consistent role toggling logic
+    function buildFacesGrid(){
+      facesGrid.innerHTML = '';
+      FACES.forEach(face => {
+        const card = document.createElement('div');
+        card.className = 'face-option';
+        card.dataset.img = face.img;
+        card.dataset.name = face.name;
+        card.innerHTML = `
+          <img src="${face.img}" alt="${face.name}" loading="lazy" />
+          <div class="label">${face.name}</div>
+        `;
+        card.addEventListener('click', () => {
+          const img = card.dataset.img;
+          // tap-to-toggle role selection
+          if (hero === img) { hero = null; }
+          else if (!hero) { hero = img; }
+          else if (villain === img) { villain = null; }
+          else if (!villain && img !== hero) { villain = img; }
+          else if (ghost === img) { ghost = null; }
+          else if (!ghost && img !== hero && img !== villain) { ghost = img; }
+          updateSelectionUI();
+        });
+        facesGrid.appendChild(card);
       });
-      facesGrid.appendChild(card);
-    });
+    }
 
     function updateSelectionUI() {
       chosenHeroEl.textContent = 'Hero: ' + (hero ? displayName(hero) : '—');
@@ -267,6 +271,9 @@
       });
     }
     function displayName(img) { return FACES.find(f => f.img === img)?.name || img; }
+    // initial grid + UI
+    buildFacesGrid();
+    updateSelectionUI();
 
     /***** GAME STATE *****/
     let faces = [];      // array of Face objects in play
@@ -279,6 +286,7 @@
     let highScore = Number(localStorage.getItem('sd_high') || 0);
     highEl.textContent = highScore;
     let level = 1; // 1,2,3
+    let audioMuted = localStorage.getItem('sd_muted') === '1'; // user-controlled mute state
 
     // background music
     const bgMusic = new Audio(BG_MUSIC_FILE);
@@ -318,8 +326,10 @@
       update(){
         if (!paused){
           // movement reflection
-          if (this.x + this.w > canvas.width || this.x < 0) this.dx *= -1;
-          if (this.y + this.h > canvas.height || this.y < 0) this.dy *= -1;
+          const maxX = Math.max(0, canvas.clientWidth - this.w);
+          const maxY = Math.max(0, canvas.clientHeight - this.h);
+          if (this.x > maxX || this.x < 0) this.dx *= -1;
+          if (this.y > maxY || this.y < 0) this.dy *= -1;
           // speed adjustments per level handled by dx/dy magnitude on creation; small random jitter
           this.x += this.dx + (Math.random()-0.5) * 0.6;
           this.y += this.dy + (Math.random()-0.5) * 0.6;
@@ -331,9 +341,9 @@
 
     /***** DRAW BACKGROUND & LOOP *****/
     function drawBG(){
-      const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+      const g = ctx.createLinearGradient(0,0,canvas.clientWidth,canvas.clientHeight);
       g.addColorStop(0,'#ff006e'); g.addColorStop(.5,'#8338ec'); g.addColorStop(1,'#3a86ff');
-      ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = g; ctx.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
     }
 
     function loop(){
@@ -356,8 +366,8 @@
 
       for (let i = 0; i < spawnCount; i++){
         const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
-        const x = Math.random() * (canvas.width - 120);
-        const y = Math.random() * (canvas.height - 120);
+        const x = Math.random() * Math.max(1, (canvas.clientWidth - 120));
+        const y = Math.random() * Math.max(1, (canvas.clientHeight - 120));
         const maybeGhost = (pick === ghost);
         faces.push(new Face(pick, x, y, speedFactor, maybeGhost));
       }
@@ -397,8 +407,8 @@
         const addCount = Math.max(1, Math.floor(level)); // add 1-3 depending on level
         for (let i=0;i<addCount;i++){
           const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
-          const x = Math.random() * (canvas.width - 120);
-          const y = Math.random() * (canvas.height - 120);
+          const x = Math.random() * Math.max(1, (canvas.clientWidth - 120));
+          const y = Math.random() * Math.max(1, (canvas.clientHeight - 120));
           faces.push(new Face(pick, x, y, (level===1?1:level===2?1.25:1.6), pick===ghost));
         }
       }, 2000 - level * 400); // faster additions in higher levels
@@ -506,8 +516,8 @@
         if (faces.length < (level === 1 ? 7 : level === 2 ? 9 : 12)) {
           // add a face to maintain density
           const pick = FACES[Math.floor(Math.random() * FACES.length)].img;
-          const x = Math.random() * (canvas.width - 120);
-          const y = Math.random() * (canvas.height - 120);
+          const x = Math.random() * Math.max(1, (canvas.clientWidth - 120));
+          const y = Math.random() * Math.max(1, (canvas.clientHeight - 120));
           faces.push(new Face(pick, x, y, (level===1?1:level===2?1.25:1.6), pick===ghost));
         }
       }
@@ -552,8 +562,9 @@
       const el = document.createElement('div');
       el.className = 'float';
       el.textContent = text;
-      el.style.left = (canvas.offsetLeft + x - 6) + 'px';
-      el.style.top  = (canvas.offsetTop + y - 6) + 'px';
+      const r = canvas.getBoundingClientRect();
+      el.style.left = (window.scrollX + r.left + x - 6) + 'px';
+      el.style.top  = (window.scrollY + r.top + y - 6) + 'px';
       el.style.color = color;
       document.body.appendChild(el);
       setTimeout(()=> el.remove(), 1000);
@@ -561,15 +572,17 @@
 
     /***** Audio helpers *****/
     function playSFX(file){
-      if (!file) return;
+      if (!file || audioMuted) return;
       const a = new Audio(file);
       a.volume = 0.9;
+      a.muted = audioMuted;
       a.play().catch(()=>{});
     }
     function playSFXGeneric(file){
-      if (!file) return;
+      if (!file || audioMuted) return;
       const a = new Audio(file);
       a.volume = 0.9;
+      a.muted = audioMuted;
       a.play().catch(()=>{});
     }
     function playSFXForFace(faceObj, fallback){
@@ -604,6 +617,15 @@
       if (!paused) loop();
     });
 
+    soundBtn.addEventListener('click', ()=> {
+      audioMuted = !audioMuted;
+      soundBtn.textContent = audioMuted ? 'Unmute' : 'Mute';
+      soundBtn.setAttribute('aria-pressed', String(audioMuted));
+      // apply to bg music immediately
+      bgMusic.muted = audioMuted;
+      localStorage.setItem('sd_muted', audioMuted ? '1' : '0');
+    });
+
     restartBtn.addEventListener('click', ()=> {
       if (!running) return;
       // quick restart while in-game
@@ -623,57 +645,16 @@
       selectCard.classList.add('hidden');
       overCard.classList.add('hidden');
       gameCard.classList.remove('hidden');
-      // set canvas resolution to CSS size for crispness
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+      // prepare canvas for device pixel ratio
+      resizeCanvas();
+      // apply mute setting to UI and bg audio
+      soundBtn.textContent = audioMuted ? 'Unmute' : 'Mute';
+      soundBtn.setAttribute('aria-pressed', String(audioMuted));
+      bgMusic.muted = audioMuted;
       startGame();
     });
 
-    /***** Initial UI update and helper for selection mapping *****/
-    function updateSelectionUI(){
-      chosenHeroEl.textContent = 'Hero: ' + (hero ? displayName(hero) : '—');
-      chosenVillainEl.textContent = 'Villain: ' + (villain ? displayName(villain) : '—');
-      chosenGhostEl.textContent = 'Ghost: ' + (ghost ? displayName(ghost) : '—');
-      startBtn.disabled = !(hero && villain);
-      document.querySelectorAll('.face-option').forEach(el => {
-        el.classList.remove('selected-hero','selected-villain','selected-ghost');
-        const img = el.dataset.img;
-        if (img === hero) el.classList.add('selected-hero');
-        if (img === villain) el.classList.add('selected-villain');
-        if (img === ghost) el.classList.add('selected-ghost');
-      });
-    }
-    // we need an earlier updateSelectionUI for the grid builder - re-declare to keep consistent
-    updateSelectionUI = updateSelectionUI.bind(window);
-
-    // (re)build faces grid (this also defines per-card click behavior above—so re-run)
-    (function initGrid(){
-      // ensure grid is empty then repopulate (we already added earlier, but safe)
-      facesGrid.innerHTML = '';
-      FACES.forEach(face => {
-        const card = document.createElement('div');
-        card.className = 'face-option';
-        card.dataset.img = face.img;
-        card.dataset.name = face.name;
-        card.innerHTML = `
-          <img src="${face.img}" alt="${face.name}" />
-          <div class="label">${face.name}</div>
-        `;
-        card.addEventListener('click', () => {
-          const img = card.dataset.img;
-          // role-set logic: if not hero => set hero; else if hero set and not villain => set villain; else if both set and not ghost => set ghost
-          if (!hero) { hero = img; }
-          else if (hero === img) { hero = null; }
-          else if (!villain && img !== hero) { villain = img; }
-          else if (villain === img) { villain = null; }
-          else if (!ghost && img !== hero && img !== villain) { ghost = img; }
-          else if (ghost === img) { ghost = null; }
-          updateSelectionUI();
-        });
-        facesGrid.appendChild(card);
-      });
-      updateSelectionUI();
-    })();
+    // duplicate UI builder removed; grid is built once on load
 
     // Utility: show initial local high score
     highEl.textContent = highScore;
@@ -681,11 +662,21 @@
     // Prevent accidental text selection on double-tap
     document.addEventListener('touchmove', (e)=> { if (paused) e.preventDefault(); }, { passive:false });
 
-    // Resize handler: keep canvas sized
+    // Resize handler: keep canvas sized with DPR
+    function resizeCanvas(){
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const displayWidth = canvas.clientWidth;
+      const displayHeight = canvas.clientHeight;
+      const needResize = canvas.width !== Math.round(displayWidth * dpr) || canvas.height !== Math.round(displayHeight * dpr);
+      if (needResize){
+        canvas.width = Math.round(displayWidth * dpr);
+        canvas.height = Math.round(displayHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
     window.addEventListener('resize', ()=>{
       if (gameCard.classList.contains('hidden')) return;
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+      resizeCanvas();
     });
 
     // Ensure selection UI initially set (in case variables prepopulated)
